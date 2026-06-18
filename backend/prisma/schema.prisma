@@ -117,6 +117,7 @@ enum PositionStatus {
 
 enum AlertType {
   WALLET_ENTER
+  WALLET_ADD
   WALLET_TRIM
   WALLET_EXIT
   WALLET_MULTIPLE

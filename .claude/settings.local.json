@@ -14,7 +14,10 @@
       "Bash(git -C C:/Users/Asus/OneDrive/Desktop/nexus add -A)",
       "Bash(git -C C:/Users/Asus/OneDrive/Desktop/nexus commit -q -m 'Wallet alerts: emoji+name labels, token ticker, SOL+USD amounts, partial-sell \\(TRIM\\) alerts, +50% rung, rename API')",
       "Bash(git -C C:/Users/Asus/OneDrive/Desktop/nexus push origin main)",
-      "Bash(echo \"=== push exit: $? ===\")"
+      "Bash(echo \"=== push exit: $? ===\")",
+      "Bash(git -C C:/Users/Asus/OneDrive/Desktop/nexus commit -q -m 'Add WALLET_ADD alert: notify when a tracked wallet buys more of a held coin')",
+      "Bash(curl -s --max-time 10 https://nexus-production-7b27.up.railway.app/health)",
+      "Bash(echo \"health: $\\(curl -s --max-time 10 https://nexus-production-7b27.up.railway.app/health\\)\")"
     ]
   }
 }

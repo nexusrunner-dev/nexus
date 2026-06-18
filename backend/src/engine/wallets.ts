@@ -123,17 +123,37 @@ async function processOne(ev: SwapEvent, solPrice: number): Promise<void> {
       });
       log.info(`${who(wallet)} ENTER ${tok} (${fmtUsdCompact(usdValue)})`);
     } else {
-      // Adding to an existing position — update cost basis, no alert.
+      // Buying MORE of a coin already held — update cost basis AND alert.
+      const meta = existing.tokenSymbol
+        ? { symbol: existing.tokenSymbol }
+        : await getTokenMeta(ev.tokenAddress);
+      const tok = tokenLabel(meta.symbol, ev.tokenAddress);
       const newAmount = existing.amount + ev.tokenAmount;
       const newCost = existing.costBasisUsd + usdValue;
+      const newAvg = newAmount > 0 ? newCost / newAmount : 0;
       await prisma.position.update({
         where: { id: existing.id },
         data: {
           amount: newAmount,
           costBasisUsd: newCost,
-          avgEntryPriceUsd: newAmount > 0 ? newCost / newAmount : 0,
+          avgEntryPriceUsd: newAvg,
+          tokenSymbol: meta.symbol ?? existing.tokenSymbol,
         },
       });
+
+      await dispatchAlert({
+        type: "WALLET_ADD",
+        title: `🔵 ${who(wallet)} ADDED to ${tok}`,
+        body:
+          `Bought *${fmtUsdCompact(usdValue)}* (${sol(ev.solAmount)}) more of ${tok}\n` +
+          `New avg entry ≈ ${fmtUsd(newAvg)} · position now ≈ ${fmtUsdCompact(newCost)}`,
+        tokenAddress: ev.tokenAddress,
+        tokenSymbol: meta.symbol ?? undefined,
+        walletAddress: wallet.address,
+        data: { usdValue, solAmount: ev.solAmount, newAvg, newCost, signature: ev.signature },
+        dedupeKey: `add:${wallet.id}:${ev.tokenAddress}:${ev.signature}`,
+      });
+      log.info(`${who(wallet)} ADD ${tok} (${fmtUsdCompact(usdValue)})`);
     }
     return;
   }
