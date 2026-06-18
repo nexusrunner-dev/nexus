@@ -5,7 +5,9 @@
       "Bash(git --version)",
       "Bash(command -v node)",
       "Bash(echo \"PATH node: $\\(node -v\\) / npm $\\(npm -v\\)\")",
-      "Read(//c/Program Files/nodejs/**)"
+      "Read(//c/Program Files/nodejs/**)",
+      "Bash(curl -s https://nexus-production-7b27.up.railway.app/health)",
+      "Bash(curl -s -X POST https://nexus-production-7b27.up.railway.app/api/settings/test-alert)"
     ]
   }
 }

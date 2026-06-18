@@ -1,5 +1,8 @@
+import path from "node:path";
+import fs from "node:fs";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import fastifyStatic from "@fastify/static";
 import { corsOrigins, features } from "./config.js";
 
 import walletsRoutes from "./routes/wallets.js";
@@ -38,6 +41,25 @@ export function buildServer() {
   );
 
   app.register(webhookRoutes);
+
+  // Serve the built dashboard (production single-service deploy). The Docker
+  // image places the compiled frontend in ./public. In local dev this folder
+  // doesn't exist, so we skip it and the dashboard runs separately via Vite.
+  const frontendDir = path.resolve(process.cwd(), process.env.FRONTEND_DIR || "public");
+  if (fs.existsSync(path.join(frontendDir, "index.html"))) {
+    app.register(fastifyStatic, { root: frontendDir, prefix: "/" });
+    // Fallback any non-API GET to the SPA entry point.
+    app.setNotFoundHandler((req, reply) => {
+      if (
+        req.method === "GET" &&
+        !req.url.startsWith("/api") &&
+        !req.url.startsWith("/webhooks")
+      ) {
+        return reply.sendFile("index.html");
+      }
+      reply.code(404).send({ error: "not found" });
+    });
+  }
 
   return app;
 }
