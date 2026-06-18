@@ -1,0 +1,124 @@
+// Nexus — Prisma schema (PostgreSQL)
+// Run `npm run db:push` (dev) or `npm run db:migrate` (prod) after editing.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Runtime key/value settings (e.g. telegram chat id set from the dashboard) ───
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Wallets we watch for ENTER / EXIT / 2x events ───
+model Wallet {
+  id              String     @id @default(cuid())
+  address         String     @unique
+  label           String?
+  active          Boolean    @default(true)
+  // Helius webhook this wallet is registered under (wallets are batched per webhook).
+  heliusWebhookId String?
+  createdAt       DateTime   @default(now())
+  positions       Position[]
+
+  @@index([active])
+}
+
+// ─── A wallet's position in a single token (cost basis + PnL tracking) ───
+model Position {
+  id                 String         @id @default(cuid())
+  wallet             Wallet         @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  walletId           String
+  tokenAddress       String
+  tokenSymbol        String?
+  // Net token units currently held by this wallet (our running estimate).
+  amount             Float          @default(0)
+  // USD cost basis of the currently-held amount.
+  costBasisUsd       Float          @default(0)
+  // Weighted average entry price (USD per token) for the held amount.
+  avgEntryPriceUsd   Float          @default(0)
+  realizedPnlUsd     Float          @default(0)
+  status             PositionStatus @default(OPEN)
+  // Highest "Nx" multiple we have already alerted on (so 2x fires once, then 3x, …).
+  maxMultipleAlerted Float          @default(1)
+  openedAt           DateTime       @default(now())
+  closedAt           DateTime?
+  updatedAt          DateTime       @updatedAt
+
+  @@unique([walletId, tokenAddress])
+  @@index([status])
+  @@index([tokenAddress])
+}
+
+// ─── Memecoins on the user's watchlist ───
+model WatchToken {
+  id            String   @id @default(cuid())
+  address       String   @unique
+  symbol        String?
+  name          String?
+  active        Boolean  @default(true)
+  // Per-token alert tuning (null → fall back to env defaults).
+  movePct       Float?
+  windowMin     Int?
+  // Baseline price captured when added — used for "Nx since added" alerts.
+  baselinePrice Float?
+  lastPrice     Float?
+  // Highest multiple already alerted relative to baseline.
+  maxMultipleAlerted Float @default(1)
+  createdAt     DateTime @default(now())
+
+  @@index([active])
+}
+
+// ─── Rolling price samples (for % move + multiple detection) ───
+model PriceSample {
+  id           String   @id @default(cuid())
+  tokenAddress String
+  priceUsd     Float
+  liquidityUsd Float?
+  volume24hUsd Float?
+  ts           DateTime @default(now())
+
+  @@index([tokenAddress, ts])
+}
+
+// ─── Every alert we have fired (also used for dashboard feed + dedupe) ───
+model Alert {
+  id            String    @id @default(cuid())
+  type          AlertType
+  tokenAddress  String?
+  tokenSymbol   String?
+  walletAddress String?
+  title         String
+  body          String
+  // JSON blob with the numbers behind the alert (price, multiple, pct, etc.).
+  data          Json?
+  // Dedupe / cooldown key (type + token + bucket). Unique to block repeats.
+  dedupeKey     String?   @unique
+  delivered     Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+
+  @@index([createdAt])
+  @@index([type])
+}
+
+enum PositionStatus {
+  OPEN
+  CLOSED
+}
+
+enum AlertType {
+  WALLET_ENTER
+  WALLET_EXIT
+  WALLET_MULTIPLE
+  WATCH_MOVE
+  WATCH_MULTIPLE
+  WATCH_VOLUME
+}

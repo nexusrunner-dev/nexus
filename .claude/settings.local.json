@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm -v)",
+      "Bash(git --version)",
+      "Bash(command -v node)",
+      "Bash(echo \"PATH node: $\\(node -v\\) / npm $\\(npm -v\\)\")",
+      "Read(//c/Program Files/nodejs/**)"
+    ]
+  }
+}
