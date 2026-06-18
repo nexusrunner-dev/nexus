@@ -22,6 +22,7 @@ model Wallet {
   id              String     @id @default(cuid())
   address         String     @unique
   label           String?
+  emoji           String?
   active          Boolean    @default(true)
   // Helius webhook this wallet is registered under (wallets are batched per webhook).
   heliusWebhookId String?
@@ -116,6 +117,7 @@ enum PositionStatus {
 
 enum AlertType {
   WALLET_ENTER
+  WALLET_TRIM
   WALLET_EXIT
   WALLET_MULTIPLE
   WATCH_MOVE

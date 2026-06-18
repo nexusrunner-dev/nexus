@@ -22,6 +22,7 @@ export interface Wallet {
   id: string;
   address: string;
   label: string | null;
+  emoji: string | null;
   active: boolean;
   positions: number;
   createdAt: string;
@@ -71,8 +72,13 @@ export interface Settings {
 export const api = {
   wallets: {
     list: () => req<Wallet[]>("/wallets"),
-    add: (address: string, label?: string) =>
-      req<Wallet>("/wallets", { method: "POST", body: JSON.stringify({ address, label }) }),
+    add: (address: string, label?: string, emoji?: string) =>
+      req<Wallet>("/wallets", {
+        method: "POST",
+        body: JSON.stringify({ address, label, emoji }),
+      }),
+    update: (id: string, patch: { label?: string | null; emoji?: string | null }) =>
+      req<Wallet>(`/wallets/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
     remove: (id: string) => req<{ ok: true }>(`/wallets/${id}`, { method: "DELETE" }),
   },
   watchlist: {

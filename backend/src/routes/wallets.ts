@@ -18,6 +18,7 @@ export default async function walletsRoutes(app: FastifyInstance) {
       id: w.id,
       address: w.address,
       label: w.label,
+      emoji: w.emoji,
       active: w.active,
       positions: w._count.positions,
       createdAt: w.createdAt,
@@ -26,7 +27,11 @@ export default async function walletsRoutes(app: FastifyInstance) {
 
   // Add a wallet to track.
   app.post("/wallets", async (req, reply) => {
-    const body = (req.body ?? {}) as { address?: string; label?: string };
+    const body = (req.body ?? {}) as {
+      address?: string;
+      label?: string;
+      emoji?: string;
+    };
     const address = body.address?.trim();
     if (!isValidSolanaAddress(address)) {
       return reply.code(400).send({ error: "invalid Solana address" });
@@ -37,7 +42,11 @@ export default async function walletsRoutes(app: FastifyInstance) {
     }
 
     const wallet = await prisma.wallet.create({
-      data: { address, label: body.label?.trim() || null },
+      data: {
+        address,
+        label: body.label?.trim() || null,
+        emoji: body.emoji?.trim() || null,
+      },
     });
 
     // Register with Helius + seed current holdings (don't block the response).
@@ -59,6 +68,21 @@ export default async function walletsRoutes(app: FastifyInstance) {
     });
     if (!wallet) return reply.code(404).send({ error: "not found" });
     return wallet;
+  });
+
+  // Rename a wallet / set its emoji.
+  app.patch<{ Params: { id: string } }>("/wallets/:id", async (req, reply) => {
+    const body = (req.body ?? {}) as { label?: string | null; emoji?: string | null };
+    const wallet = await prisma.wallet.findUnique({ where: { id: req.params.id } });
+    if (!wallet) return reply.code(404).send({ error: "not found" });
+    const updated = await prisma.wallet.update({
+      where: { id: req.params.id },
+      data: {
+        label: body.label !== undefined ? body.label?.trim() || null : wallet.label,
+        emoji: body.emoji !== undefined ? body.emoji?.trim() || null : wallet.emoji,
+      },
+    });
+    return updated;
   });
 
   // Stop tracking a wallet (deletes it and its positions).

@@ -1,33 +1,49 @@
 import { prisma } from "../db.js";
 import { createLogger } from "../logger.js";
 import { dispatchAlert } from "../services/notifier.js";
-import { getSolPriceUsd, getPriceUsd } from "../services/prices.js";
+import {
+  getSolPriceUsd,
+  getPriceUsd,
+  getTokenMeta,
+  getSnapshot,
+} from "../services/prices.js";
 import { highestNewRung } from "./multiples.js";
 import type { SwapEvent } from "../services/helius.js";
 import { getTokenHoldings } from "../services/helius.js";
-import {
-  fmtUsd,
-  fmtUsdCompact,
-  fmtMultiple,
-  shortAddr,
-} from "../lib/format.js";
+import { fmtUsd, fmtUsdCompact, fmtMultiple, shortAddr } from "../lib/format.js";
 
 // ────────────────────────────────────────────────────────────────────────────
 //  Wallet tracking engine.
 //
-//  • processSwapEvents — consumes normalised BUY/SELL events (from the Helius
-//    webhook) and maintains each wallet's position + cost basis, firing
-//    ENTER and EXIT alerts.
-//  • checkWalletMultiples — run by the price watcher; for every OPEN position it
-//    compares the current price to the average entry and fires 2x/3x/… alerts.
-//  • seedWalletPositions — snapshots a newly-added wallet's current holdings so
-//    we have a baseline (no false ENTER, and a starting point for multiples).
+//  Alerts fired:
+//   • ENTER    — wallet opens a fresh position (buys a coin it didn't hold)
+//   • TRIM     — wallet sells PART of a position
+//   • EXIT     — wallet sells out completely (with realized PnL)
+//   • MULTIPLE — a held position crosses +50% / 2x / 3x / … / 1000x
+//
+//  Each alert shows the wallet's emoji+name, the token's ticker (when known),
+//  and the trade size in both SOL and USD.
 // ────────────────────────────────────────────────────────────────────────────
 
 const log = createLogger("wallet-engine");
 
 // Below this fraction of the original size we treat a position as fully exited.
 const DUST_FRACTION = 0.02;
+
+type WalletLike = { emoji: string | null; label: string | null; address: string };
+
+/** "🐳 whale.sol" / "💎 Smart Money" / "7xKX…9fQ2" */
+function who(w: WalletLike): string {
+  const name = w.label || shortAddr(w.address);
+  return w.emoji ? `${w.emoji} ${name}` : name;
+}
+
+/** "$WIF" when we know the ticker, otherwise a short mint. */
+function tokenLabel(symbol: string | null | undefined, address: string): string {
+  return symbol ? `$${symbol}` : `${address.slice(0, 6)}…`;
+}
+
+const sol = (n: number) => `${n.toFixed(2)} SOL`;
 
 export async function processSwapEvents(events: SwapEvent[]): Promise<void> {
   if (events.length === 0) return;
@@ -47,37 +63,32 @@ export async function processSwapEvents(events: SwapEvent[]): Promise<void> {
 }
 
 async function processOne(ev: SwapEvent, solPrice: number): Promise<void> {
-  const wallet = await prisma.wallet.findUnique({
-    where: { address: ev.owner },
-  });
+  const wallet = await prisma.wallet.findUnique({ where: { address: ev.owner } });
   if (!wallet || !wallet.active) return;
 
   const usdValue = ev.solAmount * solPrice;
   const executedPrice = ev.tokenAmount > 0 ? usdValue / ev.tokenAmount : 0;
-  const label = wallet.label || shortAddr(wallet.address);
 
   const existing = await prisma.position.findUnique({
     where: {
-      walletId_tokenAddress: {
-        walletId: wallet.id,
-        tokenAddress: ev.tokenAddress,
-      },
+      walletId_tokenAddress: { walletId: wallet.id, tokenAddress: ev.tokenAddress },
     },
   });
 
+  // ── BUY ─────────────────────────────────────────────────────────────────
   if (ev.direction === "BUY") {
     if (!existing || existing.status === "CLOSED" || existing.amount <= 0) {
-      // Fresh entry (or re-entry after a full exit).
+      const meta = await getTokenMeta(ev.tokenAddress);
+      const tok = tokenLabel(meta.symbol, ev.tokenAddress);
+
       await prisma.position.upsert({
         where: {
-          walletId_tokenAddress: {
-            walletId: wallet.id,
-            tokenAddress: ev.tokenAddress,
-          },
+          walletId_tokenAddress: { walletId: wallet.id, tokenAddress: ev.tokenAddress },
         },
         create: {
           walletId: wallet.id,
           tokenAddress: ev.tokenAddress,
+          tokenSymbol: meta.symbol ?? null,
           amount: ev.tokenAmount,
           costBasisUsd: usdValue,
           avgEntryPriceUsd: executedPrice,
@@ -86,6 +97,7 @@ async function processOne(ev: SwapEvent, solPrice: number): Promise<void> {
           openedAt: new Date(),
         },
         update: {
+          tokenSymbol: meta.symbol ?? null,
           amount: ev.tokenAmount,
           costBasisUsd: usdValue,
           avgEntryPriceUsd: executedPrice,
@@ -99,18 +111,17 @@ async function processOne(ev: SwapEvent, solPrice: number): Promise<void> {
 
       await dispatchAlert({
         type: "WALLET_ENTER",
-        title: `🟢 ${label} ENTERED a position`,
+        title: `🟢 ${who(wallet)} ENTERED ${tok}`,
         body:
-          `Bought ${fmtUsdCompact(usdValue)} of ` +
-          `*${ev.tokenAddress.slice(0, 6)}…*\n` +
+          `Bought *${fmtUsdCompact(usdValue)}* (${sol(ev.solAmount)}) of ${tok}\n` +
           `Entry ≈ ${fmtUsd(executedPrice)} · ${ev.tokenAmount.toLocaleString()} tokens`,
         tokenAddress: ev.tokenAddress,
+        tokenSymbol: meta.symbol ?? undefined,
         walletAddress: wallet.address,
-        data: { usdValue, executedPrice, signature: ev.signature },
-        // One alert per (wallet, token, signature) — never repeats.
+        data: { usdValue, solAmount: ev.solAmount, executedPrice, signature: ev.signature },
         dedupeKey: `enter:${wallet.id}:${ev.tokenAddress}:${ev.signature}`,
       });
-      log.info(`${label} ENTER ${ev.tokenAddress} (${fmtUsdCompact(usdValue)})`);
+      log.info(`${who(wallet)} ENTER ${tok} (${fmtUsdCompact(usdValue)})`);
     } else {
       // Adding to an existing position — update cost basis, no alert.
       const newAmount = existing.amount + ev.tokenAmount;
@@ -127,12 +138,10 @@ async function processOne(ev: SwapEvent, solPrice: number): Promise<void> {
     return;
   }
 
-  // ── SELL ───────────────────────────────────────────────────────────────────
-  if (!existing || existing.status === "CLOSED" || existing.amount <= 0) {
-    // We never saw them buy this — ignore (avoids phantom exits).
-    return;
-  }
+  // ── SELL ────────────────────────────────────────────────────────────────
+  if (!existing || existing.status === "CLOSED" || existing.amount <= 0) return;
 
+  const tok = tokenLabel(existing.tokenSymbol, ev.tokenAddress);
   const soldAmount = Math.min(ev.tokenAmount, existing.amount);
   const fractionSold = soldAmount / existing.amount;
   const proceedsUsd = usdValue;
@@ -144,9 +153,7 @@ async function processOne(ev: SwapEvent, solPrice: number): Promise<void> {
   if (fullyOut) {
     const totalRealized = existing.realizedPnlUsd + realized;
     const exitMultiple =
-      existing.avgEntryPriceUsd > 0
-        ? executedPrice / existing.avgEntryPriceUsd
-        : 0;
+      existing.avgEntryPriceUsd > 0 ? executedPrice / existing.avgEntryPriceUsd : 0;
     await prisma.position.update({
       where: { id: existing.id },
       data: {
@@ -161,18 +168,19 @@ async function processOne(ev: SwapEvent, solPrice: number): Promise<void> {
     const pnlEmoji = totalRealized >= 0 ? "🟩" : "🟥";
     await dispatchAlert({
       type: "WALLET_EXIT",
-      title: `🔴 ${label} EXITED a position`,
+      title: `🔴 ${who(wallet)} EXITED ${tok}`,
       body:
-        `Sold out of *${ev.tokenAddress.slice(0, 6)}…*\n` +
+        `Sold out — *${fmtUsdCompact(proceedsUsd)}* (${sol(ev.solAmount)})\n` +
         `${pnlEmoji} Realized PnL: *${fmtUsd(totalRealized)}* (${fmtMultiple(exitMultiple)})`,
       tokenAddress: ev.tokenAddress,
+      tokenSymbol: existing.tokenSymbol ?? undefined,
       walletAddress: wallet.address,
-      data: { realized: totalRealized, exitMultiple, signature: ev.signature },
+      data: { realized: totalRealized, exitMultiple, proceedsUsd, solAmount: ev.solAmount, signature: ev.signature },
       dedupeKey: `exit:${wallet.id}:${ev.tokenAddress}:${ev.signature}`,
     });
-    log.info(`${label} EXIT ${ev.tokenAddress} PnL ${fmtUsd(totalRealized)}`);
+    log.info(`${who(wallet)} EXIT ${tok} PnL ${fmtUsd(totalRealized)}`);
   } else {
-    // Partial trim — reduce position, accumulate realized PnL, no alert.
+    // Partial trim — reduce position and ALERT on the % sold.
     await prisma.position.update({
       where: { id: existing.id },
       data: {
@@ -181,13 +189,27 @@ async function processOne(ev: SwapEvent, solPrice: number): Promise<void> {
         realizedPnlUsd: existing.realizedPnlUsd + realized,
       },
     });
+
+    const pct = Math.round(fractionSold * 100);
+    await dispatchAlert({
+      type: "WALLET_TRIM",
+      title: `🟠 ${who(wallet)} SOLD ${pct}% of ${tok}`,
+      body:
+        `Trimmed *${pct}%* — ${fmtUsdCompact(proceedsUsd)} (${sol(ev.solAmount)})\n` +
+        `Still holding ≈ ${remaining.toLocaleString()} tokens`,
+      tokenAddress: ev.tokenAddress,
+      tokenSymbol: existing.tokenSymbol ?? undefined,
+      walletAddress: wallet.address,
+      data: { pct, proceedsUsd, solAmount: ev.solAmount, remaining, signature: ev.signature },
+      dedupeKey: `trim:${wallet.id}:${ev.tokenAddress}:${ev.signature}`,
+    });
+    log.info(`${who(wallet)} TRIM ${pct}% ${tok}`);
   }
 }
 
 /**
- * Price-watcher hook: for each OPEN position, compare current price to average
- * entry and fire a 2x/3x/5x… alert the first time each rung is crossed.
- * Tokens are deduped so we price each one only once per pass.
+ * Price-watcher hook: for each OPEN position compare current price to average
+ * entry and fire a +50% / 2x / 3x / … alert the first time each rung is crossed.
  */
 export async function checkWalletMultiples(): Promise<void> {
   const positions = await prisma.position.findMany({
@@ -196,7 +218,6 @@ export async function checkWalletMultiples(): Promise<void> {
   });
   if (positions.length === 0) return;
 
-  // Price each distinct token once.
   const tokens = [...new Set(positions.map((p) => p.tokenAddress))];
   const priceMap = new Map<string, number>();
   for (const t of tokens) {
@@ -211,16 +232,18 @@ export async function checkWalletMultiples(): Promise<void> {
     const rung = highestNewRung(multiple, pos.maxMultipleAlerted);
     if (!rung) continue;
 
-    const label = pos.wallet.label || shortAddr(pos.wallet.address);
+    const tok = tokenLabel(pos.tokenSymbol, pos.tokenAddress);
+    const rungLabel = rung === 1.5 ? "+50%" : `${rung}x`;
     const currentValue = pos.amount * price;
     await dispatchAlert({
       type: "WALLET_MULTIPLE",
-      title: `🚀 ${label} is up ${rung}x`,
+      title: `🚀 ${who(pos.wallet)} is up ${rungLabel} on ${tok}`,
       body:
-        `Position in *${pos.tokenAddress.slice(0, 6)}…* hit *${fmtMultiple(multiple)}*\n` +
+        `Position in ${tok} hit *${fmtMultiple(multiple)}*\n` +
         `Entry ${fmtUsd(pos.avgEntryPriceUsd)} → now ${fmtUsd(price)}\n` +
         `Unrealized value ≈ ${fmtUsdCompact(currentValue)}`,
       tokenAddress: pos.tokenAddress,
+      tokenSymbol: pos.tokenSymbol ?? undefined,
       walletAddress: pos.wallet.address,
       data: { multiple, rung, price, entry: pos.avgEntryPriceUsd },
       dedupeKey: `wmult:${pos.id}:${rung}`,
@@ -229,15 +252,14 @@ export async function checkWalletMultiples(): Promise<void> {
       where: { id: pos.id },
       data: { maxMultipleAlerted: rung },
     });
-    log.info(`${label} ${rung}x on ${pos.tokenAddress}`);
+    log.info(`${who(pos.wallet)} ${rungLabel} on ${tok}`);
   }
 }
 
 /**
- * Snapshot a newly-added wallet's existing holdings as OPEN positions, using
- * the current price as the entry baseline. This means we won't fire a false
- * EXIT when they sell a bag they held before tracking, and 2x is measured from
- * the moment you started tracking them.
+ * Snapshot a newly-added wallet's existing holdings as OPEN positions (with the
+ * current price as the entry baseline), so we don't fire a false EXIT on a bag
+ * they held before tracking, and multiples are measured from when you added them.
  */
 export async function seedWalletPositions(
   walletId: string,
@@ -247,16 +269,18 @@ export async function seedWalletPositions(
   if (holdings.length === 0) return;
 
   for (const h of holdings) {
-    const price = await getPriceUsd(h.mint);
+    const snap = await getSnapshot(h.mint);
+    const price = snap.priceUsd;
     if (price == null || price <= 0) continue;
     const value = h.amount * price;
-    if (value < 5) continue; // skip dust positions worth < $5
+    if (value < 5) continue; // skip dust worth < $5
 
     await prisma.position.upsert({
       where: { walletId_tokenAddress: { walletId, tokenAddress: h.mint } },
       create: {
         walletId,
         tokenAddress: h.mint,
+        tokenSymbol: snap.symbol ?? null,
         amount: h.amount,
         costBasisUsd: value,
         avgEntryPriceUsd: price,

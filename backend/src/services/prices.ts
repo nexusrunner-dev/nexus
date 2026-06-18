@@ -85,3 +85,16 @@ export async function getSolPriceUsd(): Promise<number | null> {
   if (price != null) solPriceCache = { value: price, at: now };
   return price;
 }
+
+// Token symbol/name, cached once resolved (used to label wallet alerts).
+const metaCache = new Map<string, { symbol?: string; name?: string }>();
+export async function getTokenMeta(
+  address: string,
+): Promise<{ symbol?: string; name?: string }> {
+  const cached = metaCache.get(address);
+  if (cached) return cached;
+  const snap = await getSnapshot(address);
+  const meta = { symbol: snap.symbol, name: snap.name };
+  if (snap.symbol) metaCache.set(address, meta); // only cache once we actually have it
+  return meta;
+}

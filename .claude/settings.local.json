@@ -7,7 +7,14 @@
       "Bash(echo \"PATH node: $\\(node -v\\) / npm $\\(npm -v\\)\")",
       "Read(//c/Program Files/nodejs/**)",
       "Bash(curl -s https://nexus-production-7b27.up.railway.app/health)",
-      "Bash(curl -s -X POST https://nexus-production-7b27.up.railway.app/api/settings/test-alert)"
+      "Bash(curl -s -X POST https://nexus-production-7b27.up.railway.app/api/settings/test-alert)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' https://nexus-production-7b27.up.railway.app/)",
+      "Bash(curl -s https://nexus-production-7b27.up.railway.app/api/settings)",
+      "Bash(taskkill //F //IM node.exe)",
+      "Bash(git -C C:/Users/Asus/OneDrive/Desktop/nexus add -A)",
+      "Bash(git -C C:/Users/Asus/OneDrive/Desktop/nexus commit -q -m 'Wallet alerts: emoji+name labels, token ticker, SOL+USD amounts, partial-sell \\(TRIM\\) alerts, +50% rung, rename API')",
+      "Bash(git -C C:/Users/Asus/OneDrive/Desktop/nexus push origin main)",
+      "Bash(echo \"=== push exit: $? ===\")"
     ]
   }
 }

@@ -1,7 +1,8 @@
 // Shared "Nx" ladder used by both wallet PnL and watchlist baseline alerts.
 // We alert when price crosses 2x, 3x, 5x, 10x, … exactly once per rung.
 
-export const MULTIPLE_LADDER = [2, 3, 5, 10, 25, 50, 100, 250, 500, 1000];
+// +50% (1.5x) then the usual rungs, up to 1000x.
+export const MULTIPLE_LADDER = [1.5, 2, 3, 5, 10, 25, 50, 100, 250, 500, 1000];
 
 /**
  * Given the current multiple and the highest rung already alerted, return the
