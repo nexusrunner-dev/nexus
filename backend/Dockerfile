@@ -6,7 +6,8 @@ ENV NODE_ENV=production
 RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json* ./
-RUN npm install
+# --include=dev ensures prisma + tsx are present for generate/runtime even with NODE_ENV=production
+RUN npm install --include=dev
 
 COPY prisma ./prisma
 RUN npx prisma generate
