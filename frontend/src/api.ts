@@ -5,11 +5,16 @@
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
+  const method = (options?.method ?? "GET").toUpperCase();
+  // POST/PATCH/PUT always carry a JSON body (empty "{}" if none given) and the
+  // matching content-type; GET/DELETE stay bodyless WITHOUT the header —
+  // Fastify rejects a json-typed request that has no body.
+  const body =
+    options?.body ?? (["POST", "PATCH", "PUT"].includes(method) ? "{}" : undefined);
   const res = await fetch(`${BASE}/api${path}`, {
-    // Only claim a JSON body when there IS one — Fastify rejects bodyless
-    // requests (DELETE) that carry a json content-type with 400 Bad Request.
-    headers: options?.body ? { "content-type": "application/json" } : {},
     ...options,
+    body,
+    headers: body ? { "content-type": "application/json" } : {},
   });
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
