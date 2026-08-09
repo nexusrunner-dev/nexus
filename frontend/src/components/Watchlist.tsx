@@ -12,6 +12,34 @@ const compact = (n: number | null | undefined) => {
   return `$${n.toFixed(0)}`;
 };
 
+export function TokenAvatar({
+  src,
+  symbol,
+  size = 40,
+}: {
+  src: string | null;
+  symbol: string | null;
+  size?: number;
+}) {
+  const [broken, setBroken] = useState(false);
+  if (src && !broken) {
+    return (
+      <img
+        className="token-img"
+        style={{ width: size, height: size }}
+        src={src}
+        alt={symbol ?? "token"}
+        onError={() => setBroken(true)}
+      />
+    );
+  }
+  return (
+    <div className="token-img token-img-fallback" style={{ width: size, height: size, fontSize: size * 0.42 }}>
+      {(symbol ?? "?").replace(/^\$/, "").charAt(0).toUpperCase()}
+    </div>
+  );
+}
+
 function targetLabel(t: WatchTarget): string {
   const dir = t.direction === "UP" ? "▲" : "▼";
   const what =
@@ -107,30 +135,34 @@ export function Watchlist() {
           {tokens.map((t) => (
             <li key={t.id} style={{ flexDirection: "column", alignItems: "stretch" }}>
               <div className="row" style={{ justifyContent: "space-between" }}>
-                <div>
+                <div className="row" style={{ gap: 10, flexWrap: "nowrap" }}>
+                  <TokenAvatar src={t.imageUrl} symbol={t.symbol} />
                   <div>
-                    <b>${t.symbol ?? short(t.address)}</b>{" "}
-                    <span className="tag">{price(t.lastPrice)}</span>{" "}
-                    {t.lastMarketCap != null && (
-                      <span className="tag">MC {compact(t.lastMarketCap)}</span>
-                    )}{" "}
-                    <span className="tag yellow">±{Math.abs(t.movePct ?? 15)}%</span>{" "}
-                    {t.targets
-                      .filter((x) => x.status === "PENDING")
-                      .map((x) => (
-                        <span key={x.id} className="tag green">
-                          🎯 {targetLabel(x)}
-                        </span>
-                      ))}
+                    <div>
+                      <b>${t.symbol ?? short(t.address)}</b>{" "}
+                      {t.name && <span className="muted small">{t.name}</span>}{" "}
+                      <span className="tag">{price(t.lastPrice)}</span>{" "}
+                      {t.lastMarketCap != null && (
+                        <span className="tag">MC {compact(t.lastMarketCap)}</span>
+                      )}{" "}
+                      <span className="tag yellow">±{Math.abs(t.movePct ?? 15)}%</span>{" "}
+                      {t.targets
+                        .filter((x) => x.status === "PENDING")
+                        .map((x) => (
+                          <span key={x.id} className="tag green">
+                            🎯 {targetLabel(x)}
+                          </span>
+                        ))}
+                    </div>
+                    <a
+                      className="mono small muted"
+                      href={`https://dexscreener.com/solana/${t.address}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {short(t.address)} ↗
+                    </a>
                   </div>
-                  <a
-                    className="mono small muted"
-                    href={`https://dexscreener.com/solana/${t.address}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {short(t.address)} ↗
-                  </a>
                 </div>
                 <div className="row" style={{ gap: 6 }}>
                   <button

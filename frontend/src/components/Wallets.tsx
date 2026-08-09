@@ -1,7 +1,19 @@
 import { useEffect, useState } from "react";
-import { api, type Wallet } from "../api";
+import { api, type Wallet, type WalletPosition } from "../api";
+import { TokenAvatar } from "./Watchlist";
 
 const short = (a: string) => `${a.slice(0, 4)}…${a.slice(-4)}`;
+const usd = (n: number | null | undefined) => {
+  if (n == null) return "—";
+  const abs = Math.abs(n);
+  const s =
+    abs >= 1e6 ? `$${(abs / 1e6).toFixed(2)}M` :
+    abs >= 1e3 ? `$${(abs / 1e3).toFixed(1)}K` :
+    abs >= 1 ? `$${abs.toFixed(2)}` : `$${abs.toPrecision(3)}`;
+  return n < 0 ? `-${s}` : s;
+};
+const priceFmt = (p: number | null) =>
+  p == null ? "—" : p >= 1 ? `$${p.toFixed(2)}` : `$${p.toPrecision(4)}`;
 
 export function Wallets() {
   const [wallets, setWallets] = useState<Wallet[]>([]);
@@ -14,6 +26,28 @@ export function Wallets() {
   const [editId, setEditId] = useState<string | null>(null); // inline rename
   const [editLabel, setEditLabel] = useState("");
   const [editEmoji, setEditEmoji] = useState("");
+  const [posId, setPosId] = useState<string | null>(null); // expanded positions
+  const [positions, setPositions] = useState<WalletPosition[] | null>(null);
+  const [posLoading, setPosLoading] = useState(false);
+
+  const togglePositions = async (id: string) => {
+    if (posId === id) {
+      setPosId(null);
+      setPositions(null);
+      return;
+    }
+    setPosId(id);
+    setPositions(null);
+    setPosLoading(true);
+    try {
+      setPositions(await api.wallets.positions(id));
+    } catch (e: any) {
+      setError(`Couldn't load positions: ${e.message}`);
+      setPosId(null);
+    } finally {
+      setPosLoading(false);
+    }
+  };
 
   const load = () =>
     api.wallets
@@ -137,6 +171,9 @@ export function Wallets() {
                   </a>
                 </div>
                 <div className="row" style={{ gap: 6 }}>
+                  <button className="ghost" onClick={() => togglePositions(w.id)}>
+                    📊 {posId === w.id ? "Hide" : "Positions"}
+                  </button>
                   <button className="ghost" onClick={() => (editId === w.id ? setEditId(null) : startEdit(w))}>
                     ✏️ {editId === w.id ? "Close" : "Edit"}
                   </button>
@@ -156,6 +193,56 @@ export function Wallets() {
                   )}
                 </div>
               </div>
+
+              {posId === w.id && (
+                <div className="editor">
+                  {posLoading ? (
+                    <div className="spinner" style={{ marginTop: 10 }}>
+                      Loading positions…
+                    </div>
+                  ) : !positions || positions.length === 0 ? (
+                    <div className="empty">No open positions right now.</div>
+                  ) : (
+                    <ul className="list" style={{ marginTop: 6 }}>
+                      {positions.map((p) => {
+                        const pnl = p.unrealizedPnlUsd;
+                        const up = pnl != null && pnl >= 0;
+                        return (
+                          <li key={p.id}>
+                            <div className="row" style={{ gap: 10, flexWrap: "nowrap" }}>
+                              <TokenAvatar src={p.imageUrl} symbol={p.tokenSymbol} size={34} />
+                              <div>
+                                <div>
+                                  <b>${p.tokenSymbol ?? short(p.tokenAddress)}</b>{" "}
+                                  <span className="tag">{usd(p.valueUsd)} held</span>{" "}
+                                  {pnl != null && (
+                                    <span className={`tag ${up ? "green" : "red"}`}>
+                                      {up ? "▲" : "▼"} {usd(pnl)}
+                                      {p.multiple != null && ` (${p.multiple.toFixed(2)}x)`}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="small muted">
+                                  entry {priceFmt(p.avgEntryPriceUsd)} → now {priceFmt(p.priceUsd)}{" "}
+                                  · since {new Date(p.openedAt).toLocaleDateString()}
+                                </div>
+                              </div>
+                            </div>
+                            <a
+                              className="mono small muted"
+                              href={`https://dexscreener.com/solana/${p.tokenAddress}`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {short(p.tokenAddress)} ↗
+                            </a>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              )}
 
               {editId === w.id && (
                 <div className="editor">

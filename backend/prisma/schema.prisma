@@ -64,6 +64,7 @@ model WatchToken {
   address       String   @unique
   symbol        String?
   name          String?
+  imageUrl      String?
   active        Boolean  @default(true)
   // Per-token alert tuning (null → fall back to env defaults).
   movePct       Float?

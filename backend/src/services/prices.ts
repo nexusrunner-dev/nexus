@@ -20,6 +20,7 @@ export interface TokenSnapshot {
   holders?: number;
   txns24h?: { buys?: number; sells?: number };
   pairCreatedAt?: number;
+  imageUrl?: string;
   source: "birdeye" | "dexscreener" | "merged" | "none";
 }
 
@@ -59,6 +60,7 @@ export async function getSnapshot(address: string): Promise<TokenSnapshot> {
     holders: overview?.holders,
     txns24h: pair?.txns24h,
     pairCreatedAt: pair?.pairCreatedAt,
+    imageUrl: pair?.imageUrl,
     source,
   };
 }

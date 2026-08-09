@@ -100,6 +100,15 @@ ul.list li:first-child { border-top: none; }
   background: var(--panel-2); border: 1px solid var(--border);
   border-radius: 10px; padding: 4px 14px 14px; margin-top: 10px;
 }
+.token-img {
+  border-radius: 50%; object-fit: cover; flex-shrink: 0;
+  border: 1px solid var(--border); background: var(--panel-2);
+}
+.token-img-fallback {
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted); font-weight: 700;
+  background: linear-gradient(135deg, var(--panel-2), #202a44);
+}
 .chip-x {
   background: none; border: none; color: var(--muted); cursor: pointer;
   font-size: 11px; padding: 0 0 0 6px;

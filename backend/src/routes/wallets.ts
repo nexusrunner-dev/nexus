@@ -3,6 +3,7 @@ import { prisma } from "../db.js";
 import { isValidSolanaAddress } from "../lib/solana.js";
 import { syncWebhook } from "../engine/heliusSync.js";
 import { seedWalletPositions } from "../engine/wallets.js";
+import { getSnapshot } from "../services/prices.js";
 import { createLogger } from "../logger.js";
 
 const log = createLogger("routes:wallets");
@@ -73,6 +74,49 @@ export default async function walletsRoutes(app: FastifyInstance) {
     });
     if (!wallet) return reply.code(404).send({ error: "not found" });
     return wallet;
+  });
+
+  // Open positions with live price / PnL enrichment (what is this wallet in?).
+  app.get<{ Params: { id: string } }>("/wallets/:id/positions", async (req, reply) => {
+    const wallet = await prisma.wallet.findUnique({ where: { id: req.params.id } });
+    if (!wallet) return reply.code(404).send({ error: "not found" });
+
+    const positions = await prisma.position.findMany({
+      where: { walletId: wallet.id, status: "OPEN", amount: { gt: 0 } },
+      orderBy: { openedAt: "desc" },
+    });
+
+    const enriched = [];
+    for (const p of positions) {
+      let price: number | null = null;
+      let imageUrl: string | undefined;
+      let symbol = p.tokenSymbol ?? undefined;
+      try {
+        const snap = await getSnapshot(p.tokenAddress);
+        price = snap.priceUsd;
+        imageUrl = snap.imageUrl;
+        symbol = symbol ?? snap.symbol;
+      } catch {
+        // price lookup failed — still return the position, just unpriced
+      }
+      const valueUsd = price != null ? p.amount * price : null;
+      enriched.push({
+        id: p.id,
+        tokenAddress: p.tokenAddress,
+        tokenSymbol: symbol ?? null,
+        imageUrl: imageUrl ?? null,
+        amount: p.amount,
+        avgEntryPriceUsd: p.avgEntryPriceUsd,
+        costBasisUsd: p.costBasisUsd,
+        priceUsd: price,
+        valueUsd,
+        unrealizedPnlUsd: valueUsd != null ? valueUsd - p.costBasisUsd : null,
+        multiple:
+          price != null && p.avgEntryPriceUsd > 0 ? price / p.avgEntryPriceUsd : null,
+        openedAt: p.openedAt,
+      });
+    }
+    return enriched;
   });
 
   // Rename a wallet / set its emoji.

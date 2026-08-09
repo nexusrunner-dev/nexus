@@ -46,6 +46,7 @@ export default async function watchlistRoutes(app: FastifyInstance) {
         address,
         symbol: snap.symbol ?? null,
         name: snap.name ?? null,
+        imageUrl: snap.imageUrl ?? null,
         movePct: body.movePct != null ? cleanPct(body.movePct) : null,
         windowMin: body.windowMin ?? null,
         baselinePrice: snap.priceUsd ?? null,

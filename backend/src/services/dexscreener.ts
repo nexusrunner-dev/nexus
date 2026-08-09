@@ -25,6 +25,7 @@ export interface DexPair {
   pairCreatedAt?: number;
   dexId?: string;
   url?: string;
+  imageUrl?: string;
 }
 
 /** Returns the most-liquid Solana pair for a token, or null. */
@@ -62,6 +63,7 @@ export async function getBestPair(address: string): Promise<DexPair | null> {
       pairCreatedAt: p.pairCreatedAt,
       dexId: p.dexId,
       url: p.url,
+      imageUrl: p.info?.imageUrl,
     };
   } catch (err) {
     log.warn(`getBestPair failed for ${address}`, String(err));

@@ -38,6 +38,7 @@ async function checkOne(token: {
   address: string;
   symbol: string | null;
   name: string | null;
+  imageUrl: string | null;
   movePct: number | null;
   windowMin: number | null;
   baselinePrice: number | null;
@@ -53,6 +54,7 @@ async function checkOne(token: {
   if (snap.marketCapUsd != null) patch.lastMarketCap = snap.marketCapUsd;
   if (!token.symbol && snap.symbol) patch.symbol = snap.symbol;
   if (!token.name && snap.name) patch.name = snap.name;
+  if (!token.imageUrl && snap.imageUrl) patch.imageUrl = snap.imageUrl;
   if (token.baselinePrice == null) patch.baselinePrice = price;
 
   // Record a sample for windowed move detection.

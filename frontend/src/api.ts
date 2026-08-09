@@ -30,6 +30,21 @@ export interface Wallet {
   createdAt: string;
 }
 
+export interface WalletPosition {
+  id: string;
+  tokenAddress: string;
+  tokenSymbol: string | null;
+  imageUrl: string | null;
+  amount: number;
+  avgEntryPriceUsd: number;
+  costBasisUsd: number;
+  priceUsd: number | null;
+  valueUsd: number | null;
+  unrealizedPnlUsd: number | null;
+  multiple: number | null;
+  openedAt: string;
+}
+
 export interface WatchTarget {
   id: string;
   tokenId: string;
@@ -48,6 +63,7 @@ export interface WatchToken {
   address: string;
   symbol: string | null;
   name: string | null;
+  imageUrl: string | null;
   active: boolean;
   movePct: number | null;
   windowMin: number | null;
@@ -97,6 +113,7 @@ export const api = {
     update: (id: string, patch: { label?: string | null; emoji?: string | null }) =>
       req<Wallet>(`/wallets/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
     remove: (id: string) => req<{ ok: true }>(`/wallets/${id}`, { method: "DELETE" }),
+    positions: (id: string) => req<WalletPosition[]>(`/wallets/${id}/positions`),
   },
   watchlist: {
     list: () => req<WatchToken[]>("/watchlist"),
