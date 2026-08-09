@@ -286,7 +286,7 @@ export async function seedWalletPositions(
   address: string,
 ): Promise<void> {
   const holdings = await getTokenHoldings(address);
-  if (holdings.length === 0) return;
+  if (!holdings || holdings.length === 0) return;
 
   for (const h of holdings) {
     const snap = await getSnapshot(h.mint);
@@ -311,4 +311,88 @@ export async function seedWalletPositions(
     });
   }
   log.info(`seeded ${holdings.length} holdings for ${shortAddr(address)}`);
+}
+
+/**
+ * Reconcile our OPEN positions against what each wallet ACTUALLY holds
+ * on-chain. Sells can happen while we're not watching (downtime, missed
+ * webhooks, transfers to another wallet) — without this, dead positions stay
+ * "open" forever and keep firing bogus 2x/3x alerts.
+ *
+ * A few closes → one EXIT alert each; a big batch (first run after downtime)
+ * → a single summary alert per wallet so Telegram isn't flooded.
+ */
+export async function reconcileWalletPositions(): Promise<void> {
+  const wallets = await prisma.wallet.findMany({
+    where: { active: true },
+    include: { positions: { where: { status: "OPEN", amount: { gt: 0 } } } },
+  });
+
+  for (const wallet of wallets) {
+    if (wallet.positions.length === 0) continue;
+
+    const holdings = await getTokenHoldings(wallet.address);
+    if (holdings === null) {
+      log.warn(`skipping reconcile for ${shortAddr(wallet.address)} — holdings lookup failed`);
+      continue;
+    }
+    const held = new Map(holdings.map((h) => [h.mint, h.amount]));
+
+    const closed: { symbol: string | null; tokenAddress: string }[] = [];
+    for (const pos of wallet.positions) {
+      const onChain = held.get(pos.tokenAddress) ?? 0;
+
+      // Fully out (or only dust left) → close the position.
+      if (onChain <= pos.amount * DUST_FRACTION) {
+        await prisma.position.update({
+          where: { id: pos.id },
+          data: { amount: 0, costBasisUsd: 0, status: "CLOSED", closedAt: new Date() },
+        });
+        closed.push({ symbol: pos.tokenSymbol, tokenAddress: pos.tokenAddress });
+        continue;
+      }
+
+      // Missed a partial sell → quietly sync our amount down to reality.
+      if (onChain < pos.amount * 0.98) {
+        const fractionLeft = onChain / pos.amount;
+        await prisma.position.update({
+          where: { id: pos.id },
+          data: { amount: onChain, costBasisUsd: pos.costBasisUsd * fractionLeft },
+        });
+      }
+    }
+
+    if (closed.length === 0) continue;
+
+    if (closed.length <= 3) {
+      for (const c of closed) {
+        const tok = tokenLabel(c.symbol, c.tokenAddress);
+        await dispatchAlert({
+          type: "WALLET_EXIT",
+          title: `🔴 ${who(wallet)} EXITED ${tok}`,
+          body: `No longer holds ${tok} — position closed.\n(Detected from on-chain holdings; the sell itself wasn't observed.)`,
+          tokenAddress: c.tokenAddress,
+          tokenSymbol: c.symbol ?? undefined,
+          walletAddress: wallet.address,
+          data: { via: "reconcile" },
+          dedupeKey: `exit-sync:${wallet.id}:${c.tokenAddress}:${Date.now()}`,
+        });
+      }
+    } else {
+      const names = closed.slice(0, 6).map((c) => tokenLabel(c.symbol, c.tokenAddress));
+      const extra = closed.length - names.length;
+      await dispatchAlert({
+        type: "WALLET_EXIT",
+        title: `🧹 ${who(wallet)}: ${closed.length} positions closed`,
+        body:
+          `No longer held on-chain: ${names.join(", ")}` +
+          (extra > 0 ? ` +${extra} more` : "") +
+          `\nDashboard counts are now synced to reality.`,
+        walletAddress: wallet.address,
+        data: { via: "reconcile", count: closed.length },
+        dedupeKey: `exit-sync-batch:${wallet.id}:${Date.now()}`,
+      });
+    }
+    log.info(`${who(wallet)}: reconciled, closed ${closed.length} stale positions`);
+  }
 }

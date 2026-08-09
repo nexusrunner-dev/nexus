@@ -71,11 +71,35 @@ model WatchToken {
   // Baseline price captured when added — used for "Nx since added" alerts.
   baselinePrice Float?
   lastPrice     Float?
+  lastMarketCap Float?
   // Highest multiple already alerted relative to baseline.
   maxMultipleAlerted Float @default(1)
   createdAt     DateTime @default(now())
+  targets       WatchTarget[]
 
   @@index([active])
+}
+
+// ─── User-defined price/market-cap targets on a watchlist coin ───
+// "Alert me if this coin gains/drops X% (or reaches $Y market cap),
+//  optionally within a time window."
+model WatchTarget {
+  id         String          @id @default(cuid())
+  token      WatchToken      @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+  tokenId    String
+  metric     TargetMetric
+  direction  TargetDirection
+  // PRICE_PCT → percent (e.g. 30 = 30%); MARKET_CAP → target mcap in USD.
+  value      Float
+  // Price (PRICE_PCT) or market cap (MARKET_CAP) when the target was created.
+  baseline   Float?
+  // Optional deadline: if it passes without the target hitting, we alert EXPIRED.
+  deadline   DateTime?
+  status     TargetStatus    @default(PENDING)
+  createdAt  DateTime        @default(now())
+  resolvedAt DateTime?
+
+  @@index([tokenId, status])
 }
 
 // ─── Rolling price samples (for % move + multiple detection) ───
@@ -115,6 +139,22 @@ enum PositionStatus {
   CLOSED
 }
 
+enum TargetMetric {
+  PRICE_PCT
+  MARKET_CAP
+}
+
+enum TargetDirection {
+  UP
+  DOWN
+}
+
+enum TargetStatus {
+  PENDING
+  HIT
+  EXPIRED
+}
+
 enum AlertType {
   WALLET_ENTER
   WALLET_ADD
@@ -124,4 +164,6 @@ enum AlertType {
   WATCH_MOVE
   WATCH_MULTIPLE
   WATCH_VOLUME
+  TARGET_HIT
+  TARGET_EXPIRED
 }

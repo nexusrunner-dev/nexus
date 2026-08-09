@@ -133,8 +133,9 @@ export interface Holding {
   decimals: number;
 }
 
-export async function getTokenHoldings(owner: string): Promise<Holding[]> {
-  if (!features.helius) return [];
+// Returns null on error (so callers can tell "API failed" from "holds nothing").
+export async function getTokenHoldings(owner: string): Promise<Holding[] | null> {
+  if (!features.helius) return null;
   try {
     const res = await fetchJson<{ result?: { items?: any[] } }>(RPC(), {
       method: "POST",
@@ -164,7 +165,7 @@ export async function getTokenHoldings(owner: string): Promise<Holding[]> {
       .filter((h) => h.amount > 0);
   } catch (err) {
     log.warn(`getTokenHoldings failed for ${owner}`, String(err));
-    return [];
+    return null;
   }
 }
 

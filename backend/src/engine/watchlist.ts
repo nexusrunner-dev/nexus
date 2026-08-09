@@ -50,6 +50,7 @@ async function checkOne(token: {
 
   // Backfill metadata + baseline on first sighting.
   const patch: Prisma.WatchTokenUpdateInput = { lastPrice: price };
+  if (snap.marketCapUsd != null) patch.lastMarketCap = snap.marketCapUsd;
   if (!token.symbol && snap.symbol) patch.symbol = snap.symbol;
   if (!token.name && snap.name) patch.name = snap.name;
   if (token.baselinePrice == null) patch.baselinePrice = price;
@@ -66,7 +67,8 @@ async function checkOne(token: {
 
   // ── (a) Sharp move within the window ──────────────────────────────────────
   const windowMin = token.windowMin ?? config.WATCH_DEFAULT_WINDOW_MIN;
-  const movePct = token.movePct ?? config.WATCH_DEFAULT_MOVE_PCT;
+  // Magnitude only — old rows may hold a negative value the user typed.
+  const movePct = Math.abs(token.movePct ?? config.WATCH_DEFAULT_MOVE_PCT);
   const since = new Date(Date.now() - windowMin * 60_000);
   const past =
     (await prisma.priceSample.findFirst({
@@ -121,7 +123,92 @@ async function checkOne(token: {
     }
   }
 
+  // ── (c) User-defined targets (price % / market cap, optional deadline) ────
+  await checkTargets(token.id, symbol, token.address, price, snap.marketCapUsd ?? null);
+
   await prisma.watchToken.update({ where: { id: token.id }, data: patch });
+}
+
+async function checkTargets(
+  tokenId: string,
+  symbol: string,
+  address: string,
+  price: number,
+  marketCap: number | null,
+): Promise<void> {
+  const targets = await prisma.watchTarget.findMany({
+    where: { tokenId, status: "PENDING" },
+  });
+
+  for (const t of targets) {
+    const isMcap = t.metric === "MARKET_CAP";
+    const current = isMcap ? marketCap : price;
+
+    // Backfill a missing baseline (target created while price data was down).
+    if (!isMcap && t.baseline == null && current != null) {
+      await prisma.watchTarget.update({ where: { id: t.id }, data: { baseline: current } });
+      t.baseline = current;
+    }
+
+    let hit = false;
+    let progressLine = "";
+    if (current != null) {
+      if (isMcap) {
+        hit = t.direction === "UP" ? current >= t.value : current <= t.value;
+        progressLine = `Market cap now ${fmtUsdCompact(current)} (target ${fmtUsdCompact(t.value)})`;
+      } else if (t.baseline != null && t.baseline > 0) {
+        const pct = ((current - t.baseline) / t.baseline) * 100;
+        hit = t.direction === "UP" ? pct >= t.value : pct <= -t.value;
+        progressLine = `${fmtPct(pct)} since target set (goal ${t.direction === "UP" ? "+" : "-"}${t.value}%)`;
+      }
+    }
+
+    if (hit) {
+      const up = t.direction === "UP";
+      await dispatchAlert({
+        type: "TARGET_HIT",
+        title: `🎯 $${symbol} hit your ${up ? "upside" : "downside"} target`,
+        body:
+          (isMcap
+            ? `Reached *${fmtUsdCompact(t.value)}* market cap (${t.direction === "UP" ? "▲" : "▼"})\n`
+            : `${up ? "Gained" : "Dropped"} *${t.value}%* as you asked\n`) +
+          `${progressLine}\nPrice now ${fmtUsd(price)}`,
+        tokenAddress: address,
+        tokenSymbol: symbol,
+        data: { targetId: t.id, metric: t.metric, direction: t.direction, value: t.value, price, marketCap },
+        dedupeKey: `target-hit:${t.id}`,
+      });
+      await prisma.watchTarget.update({
+        where: { id: t.id },
+        data: { status: "HIT", resolvedAt: new Date() },
+      });
+      log.info(`$${symbol} target HIT (${t.metric} ${t.direction} ${t.value})`);
+      continue;
+    }
+
+    // Deadline passed without hitting → tell the user it didn't make it.
+    if (t.deadline && t.deadline.getTime() <= Date.now()) {
+      await dispatchAlert({
+        type: "TARGET_EXPIRED",
+        title: `⏰ $${symbol} target expired`,
+        body:
+          (isMcap
+            ? `Didn't reach ${fmtUsdCompact(t.value)} market cap in time\n`
+            : `Didn't ${t.direction === "UP" ? "gain" : "drop"} ${t.value}% in time\n`) +
+          (progressLine ? `${progressLine}\n` : "") +
+          `Price now ${fmtUsd(price)}`,
+        tokenAddress: address,
+        tokenSymbol: symbol,
+        data: { targetId: t.id, metric: t.metric, direction: t.direction, value: t.value, price, marketCap },
+        dedupeKey: `target-exp:${t.id}`,
+      });
+      await prisma.watchTarget.update({
+        where: { id: t.id },
+        data: { status: "EXPIRED", resolvedAt: new Date() },
+      });
+      log.info(`$${symbol} target EXPIRED (${t.metric} ${t.direction} ${t.value})`);
+    }
+  }
 }
 
 async function pruneSamples(): Promise<void> {

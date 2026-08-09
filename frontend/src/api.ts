@@ -28,6 +28,19 @@ export interface Wallet {
   createdAt: string;
 }
 
+export interface WatchTarget {
+  id: string;
+  tokenId: string;
+  metric: "PRICE_PCT" | "MARKET_CAP";
+  direction: "UP" | "DOWN";
+  value: number;
+  baseline: number | null;
+  deadline: string | null;
+  status: "PENDING" | "HIT" | "EXPIRED";
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
 export interface WatchToken {
   id: string;
   address: string;
@@ -38,7 +51,9 @@ export interface WatchToken {
   windowMin: number | null;
   baselinePrice: number | null;
   lastPrice: number | null;
+  lastMarketCap: number | null;
   createdAt: string;
+  targets: WatchTarget[];
 }
 
 export interface Alert {
@@ -91,6 +106,21 @@ export const api = {
     update: (id: string, patch: Partial<Pick<WatchToken, "movePct" | "windowMin" | "active">>) =>
       req<WatchToken>(`/watchlist/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
     remove: (id: string) => req<{ ok: true }>(`/watchlist/${id}`, { method: "DELETE" }),
+    addTarget: (
+      id: string,
+      target: {
+        metric: "PRICE_PCT" | "MARKET_CAP";
+        direction: "UP" | "DOWN";
+        value: number;
+        deadlineHours?: number;
+      },
+    ) =>
+      req<WatchTarget>(`/watchlist/${id}/targets`, {
+        method: "POST",
+        body: JSON.stringify(target),
+      }),
+    removeTarget: (id: string, targetId: string) =>
+      req<{ ok: true }>(`/watchlist/${id}/targets/${targetId}`, { method: "DELETE" }),
   },
   alerts: {
     list: (limit = 50) => req<Alert[]>(`/alerts?limit=${limit}`),

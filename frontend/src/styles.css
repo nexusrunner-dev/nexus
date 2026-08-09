@@ -96,6 +96,16 @@ ul.list li:first-child { border-top: none; }
 .alert-item .a-body { color: var(--muted); font-size: 13px; margin-top: 4px; white-space: pre-line; }
 .alert-item .a-time { color: var(--muted); font-size: 11px; margin-top: 6px; }
 
+.editor {
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 4px 14px 14px; margin-top: 10px;
+}
+.chip-x {
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  font-size: 11px; padding: 0 0 0 6px;
+}
+.chip-x:hover { color: var(--red); }
+
 .analysis-out { white-space: pre-line; line-height: 1.55; }
 .error { color: var(--red); font-size: 13px; margin-top: 8px; }
 .ok { color: var(--green); font-size: 13px; margin-top: 8px; }

@@ -10,6 +10,10 @@ export function Wallets() {
   const [emoji, setEmoji] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [confirmId, setConfirmId] = useState<string | null>(null); // pending remove
+  const [editId, setEditId] = useState<string | null>(null); // inline rename
+  const [editLabel, setEditLabel] = useState("");
+  const [editEmoji, setEditEmoji] = useState("");
 
   const load = () =>
     api.wallets
@@ -39,21 +43,35 @@ export function Wallets() {
     }
   };
 
-  const rename = async (w: Wallet) => {
-    const newLabel = prompt("Wallet name:", w.label ?? "");
-    if (newLabel === null) return; // cancelled
-    const newEmoji = prompt("Emoji for this wallet (e.g. 🐳 💎 🦈):", w.emoji ?? "");
-    await api.wallets.update(w.id, {
-      label: newLabel,
-      emoji: newEmoji ?? "",
-    });
-    load();
+  const startEdit = (w: Wallet) => {
+    setEditId(w.id);
+    setEditLabel(w.label ?? "");
+    setEditEmoji(w.emoji ?? "");
+    setConfirmId(null);
+    setError("");
+  };
+
+  const saveEdit = async (id: string) => {
+    setError("");
+    try {
+      await api.wallets.update(id, { label: editLabel, emoji: editEmoji });
+      setEditId(null);
+      load();
+    } catch (e: any) {
+      setError(`Save failed: ${e.message}`);
+    }
   };
 
   const remove = async (id: string) => {
-    if (!confirm("Stop tracking this wallet?")) return;
-    await api.wallets.remove(id);
-    load();
+    setError("");
+    try {
+      await api.wallets.remove(id);
+      setConfirmId(null);
+      load();
+    } catch (e: any) {
+      setError(`Remove failed: ${e.message}`);
+      setConfirmId(null);
+    }
   };
 
   return (
@@ -61,7 +79,8 @@ export function Wallets() {
       <h2>Tracked wallets</h2>
       <p className="muted small">
         Get a Telegram alert when these wallets <b>enter</b> a coin, <b>trim</b> or
-        <b> exit</b> a position, or a holding is up <b>+50% / 2x / 3x …</b>
+        <b> exit</b> a position, or a holding is up <b>+50% / 2x / 3x …</b>{" "}
+        Positions auto-sync with what the wallet actually holds on-chain.
       </p>
 
       <div className="row" style={{ marginTop: 12 }}>
@@ -100,30 +119,66 @@ export function Wallets() {
       ) : (
         <ul className="list" style={{ marginTop: 12 }}>
           {wallets.map((w) => (
-            <li key={w.id}>
-              <div>
+            <li key={w.id} style={{ flexDirection: "column", alignItems: "stretch" }}>
+              <div className="row" style={{ justifyContent: "space-between" }}>
                 <div>
-                  {w.emoji && <span style={{ marginRight: 6 }}>{w.emoji}</span>}
-                  {w.label ? <b>{w.label}</b> : <span className="mono">{short(w.address)}</span>}{" "}
-                  <span className="tag">{w.positions} positions</span>
+                  <div>
+                    {w.emoji && <span style={{ marginRight: 6 }}>{w.emoji}</span>}
+                    {w.label ? <b>{w.label}</b> : <span className="mono">{short(w.address)}</span>}{" "}
+                    <span className="tag">{w.positions} open positions</span>
+                  </div>
+                  <a
+                    className="mono small muted"
+                    href={`https://solscan.io/account/${w.address}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {short(w.address)} ↗
+                  </a>
                 </div>
-                <a
-                  className="mono small muted"
-                  href={`https://solscan.io/account/${w.address}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {short(w.address)} ↗
-                </a>
+                <div className="row" style={{ gap: 6 }}>
+                  <button className="ghost" onClick={() => (editId === w.id ? setEditId(null) : startEdit(w))}>
+                    ✏️ {editId === w.id ? "Close" : "Edit"}
+                  </button>
+                  {confirmId === w.id ? (
+                    <>
+                      <button className="btn" style={{ background: "var(--red)" }} onClick={() => remove(w.id)}>
+                        Yes, stop tracking
+                      </button>
+                      <button className="ghost" onClick={() => setConfirmId(null)}>
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <button className="ghost danger" onClick={() => { setConfirmId(w.id); setEditId(null); }}>
+                      Remove
+                    </button>
+                  )}
+                </div>
               </div>
-              <div className="row" style={{ gap: 6 }}>
-                <button className="ghost" onClick={() => rename(w)}>
-                  ✏️ Edit
-                </button>
-                <button className="ghost danger" onClick={() => remove(w.id)}>
-                  Remove
-                </button>
-              </div>
+
+              {editId === w.id && (
+                <div className="editor">
+                  <div className="row" style={{ marginTop: 10 }}>
+                    <input
+                      className="small"
+                      style={{ width: 56, textAlign: "center" }}
+                      placeholder="🐳"
+                      value={editEmoji}
+                      onChange={(e) => setEditEmoji(e.target.value)}
+                    />
+                    <input
+                      className="grow"
+                      placeholder="wallet name"
+                      value={editLabel}
+                      onChange={(e) => setEditLabel(e.target.value)}
+                    />
+                    <button className="btn" onClick={() => saveEdit(w.id)}>
+                      Save
+                    </button>
+                  </div>
+                </div>
+              )}
             </li>
           ))}
         </ul>

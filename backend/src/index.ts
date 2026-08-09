@@ -5,7 +5,7 @@ import { prisma } from "./db.js";
 import { startBot } from "./services/telegram.js";
 import { syncWebhook } from "./engine/heliusSync.js";
 import { checkWatchlist } from "./engine/watchlist.js";
-import { checkWalletMultiples } from "./engine/wallets.js";
+import { checkWalletMultiples, reconcileWalletPositions } from "./engine/wallets.js";
 
 const log = createLogger("main");
 
@@ -38,6 +38,24 @@ async function main() {
   setInterval(tick, config.PRICE_POLL_SECONDS * 1000);
   setTimeout(tick, 5_000); // first pass shortly after boot
   log.info(`price watcher running every ${config.PRICE_POLL_SECONDS}s`);
+
+  // 5) Holdings reconciliation: close positions whose sells we never saw
+  //    (downtime, missed webhooks, transfers). Runs at boot and every 10 min.
+  let reconciling = false;
+  const reconcile = async () => {
+    if (reconciling) return;
+    reconciling = true;
+    try {
+      await reconcileWalletPositions();
+    } catch (err) {
+      log.error("reconcile failed", String(err));
+    } finally {
+      reconciling = false;
+    }
+  };
+  setInterval(reconcile, 10 * 60_000);
+  setTimeout(reconcile, 15_000); // clean up stale positions shortly after boot
+  log.info("holdings reconciler running every 10m");
 
   // Startup warnings for any missing integrations.
   if (!features.helius)

@@ -12,7 +12,12 @@ export default async function walletsRoutes(app: FastifyInstance) {
   app.get("/wallets", async () => {
     const wallets = await prisma.wallet.findMany({
       orderBy: { createdAt: "desc" },
-      include: { _count: { select: { positions: true } } },
+      // Only OPEN positions count — closed ones are history, not holdings.
+      include: {
+        _count: {
+          select: { positions: { where: { status: "OPEN", amount: { gt: 0 } } } },
+        },
+      },
     });
     return wallets.map((w) => ({
       id: w.id,
