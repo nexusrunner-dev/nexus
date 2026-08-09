@@ -6,7 +6,9 @@ const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}/api${path}`, {
-    headers: { "content-type": "application/json" },
+    // Only claim a JSON body when there IS one — Fastify rejects bodyless
+    // requests (DELETE) that carry a json content-type with 400 Bad Request.
+    headers: options?.body ? { "content-type": "application/json" } : {},
     ...options,
   });
   const text = await res.text();

@@ -26,6 +26,22 @@ export function buildServer() {
     },
   });
 
+  // Tolerate an empty body on requests that claim application/json (the
+  // dashboard used to send the header on DELETE too — default Fastify 400s).
+  app.addContentTypeParser(
+    "application/json",
+    { parseAs: "string" },
+    (_req, body, done) => {
+      if (body === "" || body == null) return done(null, undefined);
+      try {
+        done(null, JSON.parse(body as string));
+      } catch (err: any) {
+        err.statusCode = 400;
+        done(err, undefined);
+      }
+    },
+  );
+
   app.get("/health", async () => ({ ok: true, features }));
 
   // API routes under /api; webhook stays at root for a clean Helius URL.
@@ -47,7 +63,20 @@ export function buildServer() {
   // doesn't exist, so we skip it and the dashboard runs separately via Vite.
   const frontendDir = path.resolve(process.cwd(), process.env.FRONTEND_DIR || "public");
   if (fs.existsSync(path.join(frontendDir, "index.html"))) {
-    app.register(fastifyStatic, { root: frontendDir, prefix: "/" });
+    app.register(fastifyStatic, {
+      root: frontendDir,
+      prefix: "/",
+      // Hashed assets can cache forever; index.html must always revalidate so
+      // users pick up new deploys without a hard refresh.
+      setHeaders: (res, filePath) => {
+        res.setHeader(
+          "cache-control",
+          /[\\/]assets[\\/]/.test(filePath)
+            ? "public, max-age=31536000, immutable"
+            : "no-cache",
+        );
+      },
+    });
     // Fallback any non-API GET to the SPA entry point.
     app.setNotFoundHandler((req, reply) => {
       if (
