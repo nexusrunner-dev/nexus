@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type Wallet, type WalletPosition } from "../api";
-import { TokenAvatar } from "./Watchlist";
+import { TokenAvatar, CopyAddress } from "./Watchlist";
 
 const short = (a: string) => `${a.slice(0, 4)}…${a.slice(-4)}`;
 const usd = (n: number | null | undefined) => {
@@ -228,14 +228,25 @@ export function Wallets() {
                                 </div>
                               </div>
                             </div>
-                            <a
-                              className="mono small muted"
-                              href={`https://dexscreener.com/solana/${p.tokenAddress}`}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              {short(p.tokenAddress)} ↗
-                            </a>
+                            <div className="row" style={{ gap: 8 }}>
+                              <CopyAddress address={p.tokenAddress} />
+                              <a
+                                className="small"
+                                href={`https://trade.padre.gg/trade/solana/${p.tokenAddress}`}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Padre ↗
+                              </a>
+                              <a
+                                className="small"
+                                href={`https://dexscreener.com/solana/${p.tokenAddress}`}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                DS ↗
+                              </a>
+                            </div>
                           </li>
                         );
                       })}

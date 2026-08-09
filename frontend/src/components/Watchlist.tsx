@@ -40,6 +40,30 @@ export function TokenAvatar({
   );
 }
 
+export function CopyAddress({ address }: { address: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(address);
+    } catch {
+      // clipboard API blocked — fall back to a hidden textarea
+      const ta = document.createElement("textarea");
+      ta.value = address;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <button className="copy-btn mono small" onClick={copy} title="Copy contract address">
+      {copied ? "✓ copied" : "📋 copy CA"}
+    </button>
+  );
+}
+
 function targetLabel(t: WatchTarget): string {
   const dir = t.direction === "UP" ? "▲" : "▼";
   const what =
@@ -154,14 +178,26 @@ export function Watchlist() {
                           </span>
                         ))}
                     </div>
-                    <a
-                      className="mono small muted"
-                      href={`https://dexscreener.com/solana/${t.address}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {short(t.address)} ↗
-                    </a>
+                    <div className="row" style={{ gap: 8, marginTop: 2 }}>
+                      <span className="mono small muted">{short(t.address)}</span>
+                      <CopyAddress address={t.address} />
+                      <a
+                        className="small"
+                        href={`https://trade.padre.gg/trade/solana/${t.address}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Padre ↗
+                      </a>
+                      <a
+                        className="small"
+                        href={`https://dexscreener.com/solana/${t.address}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        DexScreener ↗
+                      </a>
+                    </div>
                   </div>
                 </div>
                 <div className="row" style={{ gap: 6 }}>

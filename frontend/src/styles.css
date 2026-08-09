@@ -114,6 +114,11 @@ ul.list li:first-child { border-top: none; }
   font-size: 11px; padding: 0 0 0 6px;
 }
 .chip-x:hover { color: var(--red); }
+.copy-btn {
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--muted);
+  border-radius: 6px; padding: 2px 8px; cursor: pointer; font-size: 11px;
+}
+.copy-btn:hover { color: var(--text); border-color: var(--accent); }
 
 .analysis-out { white-space: pre-line; line-height: 1.55; }
 .error { color: var(--red); font-size: 13px; margin-top: 8px; }
