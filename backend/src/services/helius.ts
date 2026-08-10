@@ -106,17 +106,26 @@ export async function syncWalletWebhook(
   try {
     if (existingId) {
       const wh = await editWebhook(existingId, addresses);
-      log.info(`updated webhook ${wh.webhookID} (${addresses.length} wallets)`);
+      log.info(
+        `updated webhook ${wh.webhookID} — sent ${addresses.length} wallets, ` +
+          `helius now has ${wh.accountAddresses?.length ?? "?"}`,
+      );
       return wh.webhookID;
     }
     const wh = await createWebhook(addresses);
-    log.info(`created webhook ${wh.webhookID} (${addresses.length} wallets)`);
+    log.info(
+      `created webhook ${wh.webhookID} — sent ${addresses.length} wallets, ` +
+        `helius now has ${wh.accountAddresses?.length ?? "?"}`,
+    );
     return wh.webhookID;
   } catch (err) {
     // If the stored id is stale (e.g. deleted in the dashboard), create anew.
     log.warn("webhook sync failed, attempting recreate", String(err));
     try {
       const wh = await createWebhook(addresses);
+      log.info(
+        `recreated webhook ${wh.webhookID} — helius has ${wh.accountAddresses?.length ?? "?"} wallets`,
+      );
       return wh.webhookID;
     } catch (err2) {
       log.error("webhook recreate failed", String(err2));

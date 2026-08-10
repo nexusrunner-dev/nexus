@@ -3,7 +3,7 @@ import { config, features } from "./config.js";
 import { createLogger } from "./logger.js";
 import { prisma } from "./db.js";
 import { startBot } from "./services/telegram.js";
-import { syncWebhook } from "./engine/heliusSync.js";
+import { syncWebhook, verifyWebhook } from "./engine/heliusSync.js";
 import { checkWatchlist } from "./engine/watchlist.js";
 import { checkWalletMultiples, reconcileWalletPositions } from "./engine/wallets.js";
 
@@ -46,6 +46,8 @@ async function main() {
     if (reconciling) return;
     reconciling = true;
     try {
+      // Make sure Helius is actually watching our wallets (drift = no alerts).
+      await verifyWebhook();
       await reconcileWalletPositions();
     } catch (err) {
       log.error("reconcile failed", String(err));
