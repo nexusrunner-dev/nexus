@@ -45,15 +45,51 @@ export default async function settingsRoutes(app: FastifyInstance) {
   });
 
   // Force a webhook repair pass and return the resulting registration.
+  // Verbose on purpose: captures the exact PUT the server sends to Helius and
+  // the raw response/error, so registration bugs can't hide.
   app.post("/settings/webhook-repair", async () => {
-    await verifyWebhook();
+    const wallets = await prisma.wallet.findMany({
+      where: { active: true },
+      select: { address: true },
+    });
+    const addresses = wallets.map((w) => w.address);
     const hooks = await listWebhooks();
+    const url = `${config.PUBLIC_BASE_URL}/webhooks/helius`;
+    const hook = hooks.find((h) => h.webhookURL === url);
+    if (!hook) {
+      await verifyWebhook();
+      return { note: "no webhook found — ran full verify", helius: await listWebhooks() };
+    }
+
+    const body = {
+      webhookURL: url,
+      transactionTypes: ["SWAP", "TRANSFER"],
+      accountAddresses: addresses,
+      webhookType: "enhanced",
+      authHeader: config.WEBHOOK_AUTH_TOKEN,
+    };
+    let response: unknown = null;
+    let error: string | null = null;
+    try {
+      const res = await fetch(
+        `https://api.helius.xyz/v0/webhooks/${hook.webhookID}?api-key=${config.HELIUS_API_KEY}`,
+        {
+          method: "PUT",
+          headers: { "content-type": "application/json", accept: "application/json" },
+          body: JSON.stringify(body),
+        },
+      );
+      const text = await res.text();
+      response = { status: res.status, body: text.slice(0, 2000) };
+    } catch (e: any) {
+      error = String(e);
+    }
     return {
-      helius: hooks.map((h) => ({
-        webhookID: h.webhookID,
-        webhookURL: h.webhookURL,
-        accountAddresses: h.accountAddresses,
-      })),
+      sentAddresses: addresses,
+      heliusKeySuffix: (config.HELIUS_API_KEY ?? "").slice(-6),
+      response,
+      error,
+      after: await listWebhooks(),
     };
   });
 
