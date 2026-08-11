@@ -36,6 +36,18 @@ export async function listWebhooks(): Promise<HeliusWebhook[]> {
   return fetchJson<HeliusWebhook[]>(apiUrl("/webhooks"));
 }
 
+// NOTE: the LIST endpoint above omits accountAddresses (observed 2026-08);
+// only this single-webhook GET reliably returns the registered address list.
+export async function getWebhook(id: string): Promise<HeliusWebhook | null> {
+  if (!features.helius) return null;
+  try {
+    return await fetchJson<HeliusWebhook>(apiUrl(`/webhooks/${id}`));
+  } catch (err) {
+    log.warn(`getWebhook ${id} failed`, String(err));
+    return null;
+  }
+}
+
 async function createWebhook(addresses: string[]): Promise<HeliusWebhook> {
   const webhookURL = `${config.PUBLIC_BASE_URL}/webhooks/helius`;
   return fetchJson<HeliusWebhook>(apiUrl("/webhooks"), {

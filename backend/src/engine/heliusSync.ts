@@ -1,5 +1,5 @@
 import { prisma, getSetting, setSetting } from "../db.js";
-import { syncWalletWebhook, listWebhooks } from "../services/helius.js";
+import { syncWalletWebhook, listWebhooks, getWebhook } from "../services/helius.js";
 import { config, features } from "../config.js";
 import { createLogger } from "../logger.js";
 
@@ -52,7 +52,10 @@ export async function verifyWebhook(): Promise<void> {
 
     const url = `${config.PUBLIC_BASE_URL}/webhooks/helius`;
     const hooks = await listWebhooks();
-    const hook = hooks.find((h) => h.webhookURL === url);
+    const found = hooks.find((h) => h.webhookURL === url);
+    // The list endpoint omits accountAddresses — fetch the single webhook,
+    // which still includes them, before judging drift.
+    const hook = found ? await getWebhook(found.webhookID) : null;
 
     const have = new Set(hook?.accountAddresses ?? []);
     const inSync =
@@ -66,7 +69,7 @@ export async function verifyWebhook(): Promise<void> {
     );
     // Trust the webhook we found by URL over any stored id.
     const storedId = await getSetting(WEBHOOK_ID_KEY);
-    const newId = await syncWalletWebhook([...want], hook?.webhookID ?? storedId);
+    const newId = await syncWalletWebhook([...want], found?.webhookID ?? storedId);
     if (newId && newId !== storedId) await setSetting(WEBHOOK_ID_KEY, newId);
   } catch (err) {
     log.error("verifyWebhook failed", String(err));
